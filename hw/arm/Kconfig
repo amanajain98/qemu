@@ -289,6 +289,9 @@ config ZYNQ
 config ARM_V7M
     bool
 
+config AM65x
+    bool
+
 config ALLWINNER_A10
     bool
     select AHCI
