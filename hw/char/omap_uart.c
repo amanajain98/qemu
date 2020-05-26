@@ -158,6 +158,19 @@ static const MemoryRegionOps omap_uart_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+struct omap_uart_s *am65x_uart_init(MemoryRegion *sysmem, 
+                              hwaddr a, qemu_irq irq, omap_clk fclk, omap_clk iclk,
+                              qemu_irq txdma, qemu_irq rxdma,
+                              const char *label, Chardev *chr)
+{
+    hwaddr base = a;
+    struct omap_uart_s *s = omap_uart_init(base, irq,
+                                           fclk, iclk, txdma, rxdma, label, chr);
+    memory_region_init_io(&s->iomem, NULL, &omap_uart_ops, s, "omap.uart", 0x100);
+    memory_region_add_subregion(sysmem, base + 0x20, &s->iomem);
+    return s;
+}
+
 struct omap_uart_s *omap2_uart_init(MemoryRegion *sysmem,
                 struct omap_target_agent_s *ta,
                 qemu_irq irq, omap_clk fclk, omap_clk iclk,

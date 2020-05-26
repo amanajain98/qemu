@@ -23,33 +23,6 @@
 #include "hw/hw.h"
 #include "hw/irq.h"
 #include "hw/arm/omap.h"
-
-struct clk {
-    const char *name;
-    const char *alias;
-    struct clk *parent;
-    struct clk *child1;
-    struct clk *sibling;
-#define ALWAYS_ENABLED		(1 << 0)
-#define CLOCK_IN_OMAP310	(1 << 10)
-#define CLOCK_IN_OMAP730	(1 << 11)
-#define CLOCK_IN_OMAP1510	(1 << 12)
-#define CLOCK_IN_OMAP16XX	(1 << 13)
-#define CLOCK_IN_OMAP242X	(1 << 14)
-#define CLOCK_IN_OMAP243X	(1 << 15)
-#define CLOCK_IN_OMAP343X	(1 << 16)
-    uint32_t flags;
-    int id;
-
-    int running;		/* Is currently ticking */
-    int enabled;		/* Is enabled, regardless of its input clk */
-    unsigned long rate;		/* Current rate (if .running) */
-    unsigned int divisor;	/* Rate relative to input (if .enabled) */
-    unsigned int multiplier;	/* Rate relative to input (if .enabled) */
-    qemu_irq users[16];		/* Who to notify on change */
-    int usecount;		/* Automatically idle when unused */
-};
-
 static struct clk xtal_osc12m = {
     .name	= "xtal_osc_12m",
     .rate	= 12000000,

@@ -54,6 +54,31 @@
 # define OMAP_CS3_SIZE		0x04000000
 
 /* omap_clk.c */
+struct clk {
+    const char *name;
+    const char *alias;
+    struct clk *parent;
+    struct clk *child1;
+    struct clk *sibling;
+#define ALWAYS_ENABLED		(1 << 0)
+#define CLOCK_IN_OMAP310	(1 << 10)
+#define CLOCK_IN_OMAP730	(1 << 11)
+#define CLOCK_IN_OMAP1510	(1 << 12)
+#define CLOCK_IN_OMAP16XX	(1 << 13)
+#define CLOCK_IN_OMAP242X	(1 << 14)
+#define CLOCK_IN_OMAP243X	(1 << 15)
+#define CLOCK_IN_OMAP343X	(1 << 16)
+    uint32_t flags;
+    int id;
+
+    int running;		/* Is currently ticking */
+    int enabled;		/* Is enabled, regardless of its input clk */
+    unsigned long rate;		/* Current rate (if .running) */
+    unsigned int divisor;	/* Rate relative to input (if .enabled) */
+    unsigned int multiplier;	/* Rate relative to input (if .enabled) */
+    qemu_irq users[16];		/* Who to notify on change */
+    int usecount;		/* Automatically idle when unused */
+};
 struct omap_mpu_state_s;
 typedef struct clk *omap_clk;
 omap_clk omap_findclk(struct omap_mpu_state_s *mpu, const char *name);
@@ -725,6 +750,10 @@ struct omap_uart_s *omap2_uart_init(MemoryRegion *sysmem,
                 qemu_irq irq, omap_clk fclk, omap_clk iclk,
                 qemu_irq txdma, qemu_irq rxdma,
                 const char *label, Chardev *chr);
+struct omap_uart_s *am65x_uart_init(MemoryRegion *sysmem, hwaddr a,
+                                      qemu_irq irq, omap_clk fclk, omap_clk iclk,
+                                      qemu_irq txdma, qemu_irq rxdma,
+                                      const char *label, Chardev *chr);
 void omap_uart_reset(struct omap_uart_s *s);
 void omap_uart_attach(struct omap_uart_s *s, Chardev *chr);
 
