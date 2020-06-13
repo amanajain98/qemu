@@ -30,7 +30,7 @@ struct AM65x  {
     MachineState parent;
     MemMapEntry *memmap;
     int sram_size;
-    ///struct omap_uart_s *uart[3];
+    struct omap_uart_s *uart;
     DeviceState *gic;
     int gic_version;
     bool secure;
@@ -60,6 +60,7 @@ struct AM65xClass {
     OBJECT_CHECK(struct AM65x, (obj), TYPE_AM65x_MACHINE)
 #define AM65x_MACHINE_GET_CLASS(obj) \
     OBJECT_GET_CLASS(struct AM65xClass, obj, TYPE_AM65x_MACHINE)
+
 enum {
     FLASH,
     CPUPERIPHS,
@@ -72,14 +73,14 @@ enum {
 };
 static MemMapEntry base_memmap[] = {
     /* Space up to 0x8000000 is reserved for a boot ROM */
-    [FLASH] =                   { 0, 0x08000000 },
+    [FLASH] =              { 0x00000000, 0x08000000 },
     [CPUPERIPHS] =         { 0x08000000, 0x00020000 },
     /* GIC distributor and CPU interfaces sit inside the CPU peripheral space */
     [GIC0_ITS] =           { 0x08000000, 0x00010000 },
     /* The space in between here is reserved for GICv3 CPU/vCPU/HYP */
     [GIC0_DISTRIBUTOR] =   { 0x08080000, 0x00020000 },
     /* This redistributor space allows up to 2*64kB*123 CPUs */
-    [UART0] =               { 0x09000000, 0x00001000 },
+    [UART0] =              { 0x09000000,0x000001000 },
     [FW_CFG] =             { 0x09020000, 0x00000018 },
     [SECURE_MEM] =         { 0x0e000000, 0x01000000 },
     /* Actual RAM size depends on initial RAM and device memory settings */
@@ -113,7 +114,7 @@ static MemMapEntry base_memmap[] = {
     [GIC0_ITS] = {0x0001000000, 0x0000400000},
     [GIC0_DISTRIBUTOR] = {0x0001800000, 0x0000100000},
     /// UART Memory Designations 
-    [UART0] = {0x0002800000, 0x0000001000},
+    [UART0] = {0x0002800000, 0x0000000200},
     [UART1] = {0x0002810000, 0x0000000200},
     [UART2] = {0x0002820000, 0x0000000200},
     /// Some memory regions 
@@ -126,12 +127,13 @@ static MemMapEntry base_memmap[] = {
 };
 */
 
-/* Dummy Clocks for initialization of the OMAP_UART. Clock Rates can be from 48MHz to 192MHz 
+/// Dummy Clocks for initialization of the OMAP_UART. Clock Rates can be from 48MHz to 192MHz 
 
 static struct clk dummy_fclk0 = {
     .name = "uart0_fclk",
     .rate = 48000000,
 };
+/*
 static struct clk dummy_fclk1 = {
     .name = "uart1_fclk",
     .rate = 192000000,
@@ -141,6 +143,7 @@ static struct clk dummy_fclk2 = {
     .rate = 48000000,
 };
 */
+/*
 static void create_uart(struct AM65x *mach, int uart,
                         MemoryRegion *mem, Chardev *chr)
 {
@@ -157,7 +160,7 @@ static void create_uart(struct AM65x *mach, int uart,
     nodename = g_strdup_printf("/pl011@%" PRIx64, base);
     g_free(nodename);
 }
-
+*/
 static bool am65x_firmware_init(struct AM65x *mach,MemoryRegion *sysmem)
 {
     pflash_cfi01_legacy_drive(mach->flash , drive_get(IF_PFLASH, 0, 0));
@@ -253,10 +256,16 @@ static void flash_create(struct AM65x *mach)
 {
     DeviceState *dev = qdev_create(NULL, TYPE_PFLASH_CFI01);
     qdev_prop_set_uint64(dev, "sector-length", AM65x_FLASH_SECTOR_SIZE);
-    qdev_prop_set_uint8(dev, "width", 4);
-    qdev_prop_set_uint8(dev, "device-width", 2);
+    qdev_prop_set_uint8(dev, "width", 1);
+    qdev_prop_set_uint8(dev, "device-width", 1);
     qdev_prop_set_bit(dev, "big-endian", false);
+    qdev_prop_set_uint16(dev, "id0", 0x89);
+    qdev_prop_set_uint16(dev, "id1", 0x18);
+    qdev_prop_set_uint16(dev, "id2", 0x00);
+    qdev_prop_set_uint16(dev, "id3", 0x00);
     qdev_prop_set_string(dev, "name", "Flash");
+    object_property_add_child(OBJECT(mach), "Flash", OBJECT(dev),
+                              &error_abort);
     mach->flash=PFLASH_CFI01(dev);    
 }
 
@@ -378,15 +387,14 @@ static void AM65x_init(MachineState *machine)
     }
     //GIC Initialisation is complete now.
     
-    create_uart(mach, VIRT_UART, sysmem, serial_hd(0));
-    if (mach->secure) {
-        create_secure_ram(mach,secure_sysmem);
-    }
-    /*
-    mach->uart[0] = am65x_uart_init(sysmem, mach->memmap[UART0].base,
+    ///create_uart(mach, VIRT_UART, sysmem, serial_hd(0));
+    create_secure_ram(mach,secure_sysmem);
+    
+    mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,
                                     qdev_get_gpio_in(mach->gic, USART0_INT),
                                     &dummy_fclk0, NULL, NULL, NULL, "UART0",
                                     serial_hd(0));
+    /*    
     mach->uart[1] = am65x_uart_init(sysmem, mach->memmap[UART1].base,
                                     qdev_get_gpio_in(mach->gic, USART1_INT),
                                     &dummy_fclk1, NULL, NULL, NULL, "UART1",
@@ -438,6 +446,10 @@ static CpuInstanceProperties am65x_cpu_index_to_props(MachineState *ms, unsigned
     assert(cpu_index < possible_cpus->len);
     return possible_cpus->cpus[cpu_index].props;
 }
+static int64_t am65x_get_default_cpu_node_id(const MachineState *ms, int idx)
+{
+    return idx % ms->numa_state->num_nodes;
+}
 static void am65x_instance_init(Object *obj)
 {
     struct AM65x *mach = AM65x_MACHINE(obj);
@@ -468,6 +480,7 @@ static void am65x_class_init(ObjectClass *oc, void *data)
     mc->cpu_index_to_instance_props = am65x_cpu_index_to_props;
     mc->ignore_memory_transaction_failures = true;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a53");
+    mc->get_default_cpu_node_id = am65x_get_default_cpu_node_id;
     mc->default_cpus = 1;
     mc->max_cpus=4;
     mc->default_ram_id = "am65x.ram";
