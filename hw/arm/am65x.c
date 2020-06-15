@@ -29,8 +29,8 @@
 struct AM65x  {
     MachineState parent;
     MemMapEntry *memmap;
-    int sram_size;
     struct omap_uart_s *uart;
+    int sram_size;
     DeviceState *gic;
     int gic_version;
     bool secure;
@@ -53,7 +53,7 @@ struct AM65xClass {
 #define LEGACY_RAMLIMIT_GB 255
 #define LEGACY_RAMLIMIT_BYTES (LEGACY_RAMLIMIT_GB * GiB)
 
-#define AM65x_FLASH_SECTOR_SIZE (256 * (KiB))
+#define AM65x_FLASH_SECTOR_SIZE (1 * (KiB))
 
 #define TYPE_AM65x_MACHINE   MACHINE_TYPE_NAME("AM65x")
 #define AM65x_MACHINE(obj) \
@@ -73,7 +73,7 @@ enum {
 };
 static MemMapEntry base_memmap[] = {
     /* Space up to 0x8000000 is reserved for a boot ROM */
-    [FLASH] =              { 0x00000000, 0x08000000 },
+    [FLASH] =              { 0x00000000, 0x00020000 },
     [CPUPERIPHS] =         { 0x08000000, 0x00020000 },
     /* GIC distributor and CPU interfaces sit inside the CPU peripheral space */
     [GIC0_ITS] =           { 0x08000000, 0x00010000 },
@@ -84,7 +84,7 @@ static MemMapEntry base_memmap[] = {
     [FW_CFG] =             { 0x09020000, 0x00000018 },
     [SECURE_MEM] =         { 0x0e000000, 0x01000000 },
     /* Actual RAM size depends on initial RAM and device memory settings */
-    [MEM] =                { GiB, LEGACY_RAMLIMIT_BYTES },
+    [MEM] =                { GiB, 0x00020000 },  ///(2^30 is starting point 0x40000000)
 };
 
 /*
@@ -128,12 +128,12 @@ static MemMapEntry base_memmap[] = {
 */
 
 /// Dummy Clocks for initialization of the OMAP_UART. Clock Rates can be from 48MHz to 192MHz 
-
+/*
 static struct clk dummy_fclk0 = {
     .name = "uart0_fclk",
     .rate = 48000000,
 };
-/*
+
 static struct clk dummy_fclk1 = {
     .name = "uart1_fclk",
     .rate = 192000000,
@@ -143,7 +143,7 @@ static struct clk dummy_fclk2 = {
     .rate = 48000000,
 };
 */
-/*
+
 static void create_uart(struct AM65x *mach, int uart,
                         MemoryRegion *mem, Chardev *chr)
 {
@@ -160,8 +160,8 @@ static void create_uart(struct AM65x *mach, int uart,
     nodename = g_strdup_printf("/pl011@%" PRIx64, base);
     g_free(nodename);
 }
-*/
-static bool am65x_firmware_init(struct AM65x *mach,MemoryRegion *sysmem)
+
+static bool am65x_firmware_init(MachineState *machine , struct AM65x *mach,MemoryRegion *sysmem)
 {
     pflash_cfi01_legacy_drive(mach->flash , drive_get(IF_PFLASH, 0, 0));
     DeviceState *dev=DEVICE(mach->flash);
@@ -175,13 +175,17 @@ static bool am65x_firmware_init(struct AM65x *mach,MemoryRegion *sysmem)
         char *fname;
         MemoryRegion *mr;
         int image_size;
-
+        /*
+        SysBusDevice *sbd = SYS_BUS_DEVICE(machine);
+        sysbus_init_mmio(sbd, &s->ram);
+	*/
         fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
         if (!fname) {
             error_report("Could not find ROM image '%s'", bios_name);
             exit(1);
         }
         mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(mach->flash), 0);
+        ///mr=machine->ram;
         image_size = load_image_mr(fname, mr);
         g_free(fname);
         if (image_size < 0) {
@@ -256,8 +260,8 @@ static void flash_create(struct AM65x *mach)
 {
     DeviceState *dev = qdev_create(NULL, TYPE_PFLASH_CFI01);
     qdev_prop_set_uint64(dev, "sector-length", AM65x_FLASH_SECTOR_SIZE);
-    qdev_prop_set_uint8(dev, "width", 1);
-    qdev_prop_set_uint8(dev, "device-width", 1);
+    qdev_prop_set_uint8(dev, "width", 4);
+    qdev_prop_set_uint8(dev, "device-width", 2);
     qdev_prop_set_bit(dev, "big-endian", false);
     qdev_prop_set_uint16(dev, "id0", 0x89);
     qdev_prop_set_uint16(dev, "id1", 0x18);
@@ -268,7 +272,19 @@ static void flash_create(struct AM65x *mach)
                               &error_abort);
     mach->flash=PFLASH_CFI01(dev);    
 }
-
+/*
+static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
+{
+    hwaddr base = mach->memmap[UART0].base;
+    DeviceState *dev = qdev_create(NULL, TYPE_OMAP_UART);
+    SysBusDevice *s = SYS_BUS_DEVICE(dev);
+    qdev_prop_set_chr(dev, "chardev", chr);
+    qdev_init_nofail(dev);
+    memory_region_add_subregion(mem, base,
+                                sysbus_mmio_get_region(s, 0));
+    sysbus_connect_irq(s, 0, qdev_get_gpio_in(mach->gic, USART0_INT));
+} 
+*/
 static void AM65x_init(MachineState *machine)
 {
     MachineClass *mc = MACHINE_GET_CLASS(machine);
@@ -386,15 +402,15 @@ static void AM65x_init(MachineState *machine)
         sysbus_connect_irq(gicbusdev, i + 3 * smp_cpus, qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
     }
     //GIC Initialisation is complete now.
-    
-    ///create_uart(mach, VIRT_UART, sysmem, serial_hd(0));
+    ///create_omap_uart(mach,sysmem,serial_hd(0));
+    create_uart(mach, VIRT_UART, sysmem, serial_hd(0));
     create_secure_ram(mach,secure_sysmem);
-    
+    /*
     mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,
                                     qdev_get_gpio_in(mach->gic, USART0_INT),
                                     &dummy_fclk0, NULL, NULL, NULL, "UART0",
-                                    serial_hd(0));
-    /*    
+                                    serial_hd(0));    
+    
     mach->uart[1] = am65x_uart_init(sysmem, mach->memmap[UART1].base,
                                     qdev_get_gpio_in(mach->gic, USART1_INT),
                                     &dummy_fclk1, NULL, NULL, NULL, "UART1",
@@ -410,11 +426,13 @@ static void AM65x_init(MachineState *machine)
     
     ///mach->sram_size = mach->memmap[COMPUTE_CLUSTER0_MSMC_SRAM].size;  /// 64MB RAM
 
-    /* RAM Memory-mapping */
+    /* RAM Memory-mapping 
+    memory_region_init_ram(machine->ram, NULL, "MACHINE_RAM", mach->memmap[MEM].size,
+                           &error_fatal);*/
     memory_region_add_subregion(sysmem, mach->memmap[MEM].base,
                                 machine->ram);
     /* Bootload Info structure update */
-    firmware_loaded = am65x_firmware_init(mach, sysmem);
+    firmware_loaded = am65x_firmware_init(machine,mach, sysmem);
     mach->bootinfo.ram_size = machine->ram_size;
     mach->bootinfo.nb_cpus = smp_cpus;
     mach->bootinfo.board_id = 100;

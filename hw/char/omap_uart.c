@@ -22,6 +22,7 @@
 #include "hw/arm/omap.h"
 #include "hw/char/serial.h"
 #include "exec/address-spaces.h"
+#include "hw/sysbus.h"
 
 /* UARTs */
 struct omap_uart_s {
@@ -62,7 +63,7 @@ struct omap_uart_s *omap_uart_init(hwaddr base,
     s->irq = irq;
     s->serial = serial_mm_init(get_system_memory(), base, 2, irq,
                                omap_clk_getrate(fclk)/16,
-                               chr ?: qemu_chr_new(label, "null", NULL),
+                               chr ? chr : qemu_chr_new(label, "null", NULL),
                                DEVICE_NATIVE_ENDIAN);
     return s;
 }
@@ -198,3 +199,27 @@ void omap_uart_attach(struct omap_uart_s *s, Chardev *chr)
                                chr ?: qemu_chr_new("null", "null", NULL),
                                DEVICE_NATIVE_ENDIAN);
 }
+static void omap_uart_class_init(ObjectClass *oc, void *data)
+{
+    
+}
+static void omap_uart_inst_init(Object *obj)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    struct omap_uart_s *s = OMAP_UART(obj);
+    memory_region_init_io(&s->iomem, OBJECT(s), &omap_uart_ops, s, "omap_uart", 0x1000);
+    sysbus_init_mmio(sbd, &s->iomem);
+    sysbus_init_irq(sbd, &s->irq);
+}
+static const TypeInfo omap_uart_info = {
+    .name          = TYPE_OMAP_UART,
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_init = omap_uart_inst_init,
+    .class_init    = omap_uart_class_init,
+};
+
+static void omap_register_types(void)
+{
+    type_register_static(&omap_uart_info);
+}
+type_init(omap_register_types)

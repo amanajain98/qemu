@@ -750,6 +750,8 @@ struct omap_uart_s *omap2_uart_init(MemoryRegion *sysmem,
                 qemu_irq irq, omap_clk fclk, omap_clk iclk,
                 qemu_irq txdma, qemu_irq rxdma,
                 const char *label, Chardev *chr);
+#define TYPE_OMAP_UART "omap_uart"
+#define OMAP_UART(obj) OBJECT_CHECK(struct omap_uart_s, (obj), TYPE_OMAP_UART)
 struct omap_uart_s *am65x_uart_init(MemoryRegion *sysmem, hwaddr a,
                                       qemu_irq irq, omap_clk fclk, omap_clk iclk,
                                       qemu_irq txdma, qemu_irq rxdma,
