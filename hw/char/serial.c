@@ -1136,7 +1136,7 @@ SerialMM *serial_mm_init(MemoryRegion *address_space,
     qdev_set_legacy_instance_id(DEVICE(smm), base, 2);
     qdev_prop_set_uint8(DEVICE(smm), "endianness", end);
     qdev_init_nofail(DEVICE(smm));
-
+    ///sysbus_mmio_map(SYS_BUS_DEVICE(smm), 0, base);
     sysbus_connect_irq(SYS_BUS_DEVICE(smm), 0, irq);
     mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(smm), 0);
     memory_region_add_subregion(address_space, base, mr);

@@ -24,6 +24,7 @@
 #include "exec/memory.h"
 #include "qemu/units.h"
 #include "hw/char/pl011.h"
+#include "sysemu/reset.h"
 
 /*The AM65x Defined Machine*/
 struct AM65x  {
@@ -71,19 +72,18 @@ enum {
     FLASH,
 };
 static MemMapEntry base_memmap[] = {
-    /* Space up to 0x8000000 is reserved for a boot ROM */
-    [MEM] =                { 0x00000000, 0x00020000 },  ///(2^30 is starting point 0x40000000)
+    /* Space up to 0x00020000 is reserved for a boot ROM */
+    [MEM] =                { 0x00000000, 0x00020000 },  
     [CPUPERIPHS] =         { 0x01800000, 0x00400000 },
     /* GIC distributor and CPU interfaces sit inside the CPU peripheral space */
     [GIC0_DISTRIBUTOR] =   { 0x01800000, 0x00200000 },
     [GIC0_ITS] =           { 0x01a00000, 0x00200000 },
-    /* The space in between here is reserved for GICv3 CPU/vCPU/HYP */
     [UART0] =              { 0x02800000, 0x000001000 },
     /* This redistributor space allows up to 2*64kB*123 CPUs */
     [FW_CFG] =             { 0x09020000, 0x00000018 },
     [SECURE_MEM] =         { 0x0e000000, 0x01000000 },
     /* Actual RAM size depends on initial RAM and device memory settings */
-    [FLASH] =              { GiB, 0x00020000 },
+    [FLASH] =              { GiB       , 0x00020000 },
 };
 
 /*
@@ -288,6 +288,11 @@ static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(mach->gic, USART0_INT));
 } 
 */
+static void am65x_reset(void *opaque)
+{
+    struct AM65x *mach = (struct AM65x *) opaque;
+    omap_uart_reset(mach->uart);
+}
 static void AM65x_init(MachineState *machine)
 {
     MachineClass *mc = MACHINE_GET_CLASS(machine);
@@ -389,28 +394,27 @@ static void AM65x_init(MachineState *machine)
 
         /* Mapping from the output timer irq lines from the CPU to the
          * GIC PPI inputs we use for the Virtual board. */
-
         for (int q = 0; q < ARRAY_SIZE(timer_irq); q++)  {
             qdev_connect_gpio_out(cpudev, q, qdev_get_gpio_in(mach->gic, ppibase + timer_irq[q]));
         }
 
         qemu_irq irq = qdev_get_gpio_in(mach->gic, ppibase + ARCH_GIC_MAINT_IRQ);
         qdev_connect_gpio_out_named(cpudev, "gicv3-maintenance-interrupt", 0, irq);
-    
         qdev_connect_gpio_out_named(cpudev, "pmu-interrupt", 0,
                                     qdev_get_gpio_in(mach->gic, ppibase + VIRTUAL_PMU_IRQ));
-        sysbus_connect_irq(gicbusdev, i, qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
+
+        sysbus_connect_irq(gicbusdev, i , qdev_get_gpio_in(cpudev, ARM_CPU_IRQ));
         sysbus_connect_irq(gicbusdev, i + smp_cpus, qdev_get_gpio_in(cpudev, ARM_CPU_FIQ));
         sysbus_connect_irq(gicbusdev, i + 2 * smp_cpus, qdev_get_gpio_in(cpudev, ARM_CPU_VIRQ));
         sysbus_connect_irq(gicbusdev, i + 3 * smp_cpus, qdev_get_gpio_in(cpudev, ARM_CPU_VFIQ));
     }
     //GIC Initialisation is complete now.
+
     ///create_omap_uart(mach,sysmem,serial_hd(0));
     ///create_uart(mach, sysmem, serial_hd(0));
     create_secure_ram(mach,secure_sysmem);
-    
-    mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,
-                                    qdev_get_gpio_in(mach->gic, USART0_INT),
+    qemu_irq ir=qdev_get_gpio_in(mach->gic, USART0_INT);
+    mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,ir,
                                     &dummy_fclk0, NULL, NULL, NULL, "UART0",
                                     serial_hd(0));    
     /*
@@ -438,8 +442,10 @@ static void AM65x_init(MachineState *machine)
     firmware_loaded = am65x_firmware_init(machine,mach, sysmem);
     mach->bootinfo.ram_size = machine->ram_size;
     mach->bootinfo.nb_cpus = smp_cpus;
-    mach->bootinfo.board_id = 100;
+    mach->bootinfo.board_id = -1;
     mach->bootinfo.firmware_loaded = firmware_loaded;
+
+    qemu_register_reset(am65x_reset, mach);
 }
 
 static const CPUArchIdList *am65x_possible_cpu_arch_ids(MachineState *ms)
