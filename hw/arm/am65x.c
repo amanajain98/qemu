@@ -25,12 +25,13 @@
 #include "qemu/units.h"
 #include "hw/char/pl011.h"
 #include "sysemu/reset.h"
+#include "hw/char/serial.h"
 
 /*The AM65x Defined Machine*/
 struct AM65x  {
     MachineState parent;
     MemMapEntry *memmap;
-    struct omap_uart_s *uart;
+    ///struct omap_uart_s *uart;
     DeviceState *gic;
     int gic_version;
     bool secure;
@@ -288,11 +289,13 @@ static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(mach->gic, USART0_INT));
 } 
 */
+/*
 static void am65x_reset(void *opaque)
 {
     struct AM65x *mach = (struct AM65x *) opaque;
     omap_uart_reset(mach->uart);
 }
+*/
 static void AM65x_init(MachineState *machine)
 {
     MachineClass *mc = MACHINE_GET_CLASS(machine);
@@ -413,11 +416,23 @@ static void AM65x_init(MachineState *machine)
     ///create_omap_uart(mach,sysmem,serial_hd(0));
     ///create_uart(mach, sysmem, serial_hd(0));
     create_secure_ram(mach,secure_sysmem);
-    qemu_irq ir=qdev_get_gpio_in(mach->gic, USART0_INT);
+    qemu_irq ir=qdev_get_gpio_in(DEVICE(mach->gic), USART0_INT);
+    SerialMM *smm = SERIAL_MM(qdev_create(NULL, TYPE_SERIAL_MM));
+    MemoryRegion *mr;
+    qdev_prop_set_uint8(DEVICE(smm), "regshift", 2);
+    qdev_prop_set_uint32(DEVICE(smm), "baudbase", omap_clk_getrate(&dummy_fclk0)/16);
+    qdev_prop_set_chr(DEVICE(smm), "chardev", serial_hd(0));
+    qdev_set_legacy_instance_id(DEVICE(smm), mach->memmap[UART0].base, 2);
+    qdev_prop_set_uint8(DEVICE(smm), "endianness", DEVICE_NATIVE_ENDIAN);
+    qdev_init_nofail(DEVICE(smm));
+    ///sysbus_mmio_map(SYS_BUS_DEVICE(smm), 0, base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(smm), 0, ir);
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(smm), 0);
+    memory_region_add_subregion(sysmem, mach->memmap[UART0].base, mr);
+    /*
     mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,ir,
                                     &dummy_fclk0, NULL, NULL, NULL, "UART0",
                                     serial_hd(0));    
-    /*
     mach->uart[1] = am65x_uart_init(sysmem, mach->memmap[UART1].base,
                                     qdev_get_gpio_in(mach->gic, USART1_INT),
                                     &dummy_fclk1, NULL, NULL, NULL, "UART1",
@@ -445,7 +460,7 @@ static void AM65x_init(MachineState *machine)
     mach->bootinfo.board_id = -1;
     mach->bootinfo.firmware_loaded = firmware_loaded;
 
-    qemu_register_reset(am65x_reset, mach);
+    ///qemu_register_reset(am65x_reset, mach);
 }
 
 static const CPUArchIdList *am65x_possible_cpu_arch_ids(MachineState *ms)
