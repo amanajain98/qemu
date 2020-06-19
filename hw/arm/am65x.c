@@ -31,7 +31,7 @@
 struct AM65x  {
     MachineState parent;
     MemMapEntry *memmap;
-    ///struct omap_uart_s *uart;
+    struct omap_uart_s *uart;
     DeviceState *gic;
     int gic_version;
     bool secure;
@@ -128,12 +128,11 @@ static MemMapEntry base_memmap[] = {
 */
 
 /// Dummy Clocks for initialization of the OMAP_UART. Clock Rates can be from 48MHz to 192MHz 
-
+/*
 static struct clk dummy_fclk0 = {
     .name = "uart0_fclk",
     .rate = 48000000,
 };
-/*
 static struct clk dummy_fclk1 = {
     .name = "uart1_fclk",
     .rate = 192000000,
@@ -160,6 +159,21 @@ static void create_uart(struct AM65x *mach,
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(mach->gic, irq));
     nodename = g_strdup_printf("/pl011@%" PRIx64, base);
     g_free(nodename);
+}
+static void create_serial_uart()
+{
+    SerialMM *smm = SERIAL_MM(qdev_create(NULL, TYPE_SERIAL_MM));
+    MemoryRegion *mr;
+    qdev_prop_set_uint8(DEVICE(smm), "regshift", 2);
+    qdev_prop_set_uint32(DEVICE(smm), "baudbase", omap_clk_getrate(&dummy_fclk0)/16);
+    qdev_prop_set_chr(DEVICE(smm), "chardev", serial_hd(0));
+    qdev_set_legacy_instance_id(DEVICE(smm), mach->memmap[UART0].base, 2);
+    qdev_prop_set_uint8(DEVICE(smm), "endianness", DEVICE_NATIVE_ENDIAN);
+    qdev_init_nofail(DEVICE(smm));
+    ///sysbus_mmio_map(SYS_BUS_DEVICE(smm), 0, base);
+    sysbus_connect_irq(SYS_BUS_DEVICE(smm), 0, ir);
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(smm), 0);
+    memory_region_add_subregion(sysmem, mach->memmap[UART0].base, mr);
 }
 */
 static bool am65x_firmware_init(MachineState *machine , struct AM65x *mach,MemoryRegion *sysmem)
@@ -276,7 +290,7 @@ static void flash_create(struct AM65x *mach)
                               &error_abort);
     mach->flash=PFLASH_CFI01(dev);    
 }
-/*
+
 static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
 {
     hwaddr base = mach->memmap[UART0].base;
@@ -288,7 +302,7 @@ static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
                                 sysbus_mmio_get_region(s, 0));
     sysbus_connect_irq(s, 0, qdev_get_gpio_in(mach->gic, USART0_INT));
 } 
-*/
+
 /*
 static void am65x_reset(void *opaque)
 {
@@ -398,7 +412,7 @@ static void AM65x_init(MachineState *machine)
         /* Mapping from the output timer irq lines from the CPU to the
          * GIC PPI inputs we use for the Virtual board. */
         for (int q = 0; q < ARRAY_SIZE(timer_irq); q++)  {
-            qdev_connect_gpio_out(cpudev, q, qdev_get_gpio_in(mach->gic, ppibase + timer_irq[q]));
+            qdev_connect_gpio_out(cpudev, q, qdev_get_gpio_in(DEVICE(mach->gic), ppibase + timer_irq[q]));
         }
 
         qemu_irq irq = qdev_get_gpio_in(mach->gic, ppibase + ARCH_GIC_MAINT_IRQ);
@@ -413,26 +427,16 @@ static void AM65x_init(MachineState *machine)
     }
     //GIC Initialisation is complete now.
 
-    ///create_omap_uart(mach,sysmem,serial_hd(0));
+    create_omap_uart(mach,sysmem,serial_hd(0));
     ///create_uart(mach, sysmem, serial_hd(0));
     create_secure_ram(mach,secure_sysmem);
-    qemu_irq ir=qdev_get_gpio_in(DEVICE(mach->gic), USART0_INT);
-    SerialMM *smm = SERIAL_MM(qdev_create(NULL, TYPE_SERIAL_MM));
-    MemoryRegion *mr;
-    qdev_prop_set_uint8(DEVICE(smm), "regshift", 2);
-    qdev_prop_set_uint32(DEVICE(smm), "baudbase", omap_clk_getrate(&dummy_fclk0)/16);
-    qdev_prop_set_chr(DEVICE(smm), "chardev", serial_hd(0));
-    qdev_set_legacy_instance_id(DEVICE(smm), mach->memmap[UART0].base, 2);
-    qdev_prop_set_uint8(DEVICE(smm), "endianness", DEVICE_NATIVE_ENDIAN);
-    qdev_init_nofail(DEVICE(smm));
-    ///sysbus_mmio_map(SYS_BUS_DEVICE(smm), 0, base);
-    sysbus_connect_irq(SYS_BUS_DEVICE(smm), 0, ir);
-    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(smm), 0);
-    memory_region_add_subregion(sysmem, mach->memmap[UART0].base, mr);
+    ///qemu_irq ir=qdev_get_gpio_in(DEVICE(mach->gic), USART0_INT);
+    
     /*
     mach->uart = am65x_uart_init(sysmem, mach->memmap[UART0].base,ir,
                                     &dummy_fclk0, NULL, NULL, NULL, "UART0",
-                                    serial_hd(0));    
+                                    serial_hd(0));   
+    
     mach->uart[1] = am65x_uart_init(sysmem, mach->memmap[UART1].base,
                                     qdev_get_gpio_in(mach->gic, USART1_INT),
                                     &dummy_fclk1, NULL, NULL, NULL, "UART1",

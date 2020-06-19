@@ -23,15 +23,21 @@
 #include "hw/char/serial.h"
 #include "exec/address-spaces.h"
 #include "hw/sysbus.h"
+#include "chardev/char-fe.h"
+#include "hw/qdev-properties.h"
+#include "hw/char/pl011.h"
 
 /* UARTs */
 struct omap_uart_s {
+    SysBusDevice parent_obj;
+
     MemoryRegion iomem;
     hwaddr base;
     SerialMM *serial; /* TODO */
     struct omap_target_agent_s *ta;
     omap_clk fclk;
     qemu_irq irq;
+    CharBackend chr;
 
     uint8_t eblr;
     uint8_t syscontrol;
@@ -41,6 +47,9 @@ struct omap_uart_s {
     uint8_t scr;
     uint8_t clksel;
 };
+
+#define TYPE_OMAP_UART "omap_uart"
+#define OMAP_UART(obj) OBJECT_CHECK(struct omap_uart_s, (obj), TYPE_OMAP_UART)
 
 void omap_uart_reset(struct omap_uart_s *s)
 {
@@ -168,7 +177,8 @@ struct omap_uart_s *am65x_uart_init(MemoryRegion *sysmem,
     struct omap_uart_s *s = omap_uart_init(base, irq,
                                            fclk, iclk, txdma, rxdma, label, chr);
     memory_region_init_io(&s->iomem, NULL, &omap_uart_ops, s, "omap.uart", 0x100);
-    memory_region_add_subregion(sysmem, base + 0x20, &s->iomem);
+    memory_region_add_subregion(sysmem, base, &s->iomem);
+    (*(s->serial)).serial.io.size=0x1000;
     return s;
 }
 
@@ -199,9 +209,15 @@ void omap_uart_attach(struct omap_uart_s *s, Chardev *chr)
                                chr ?: qemu_chr_new("null", "null", NULL),
                                DEVICE_NATIVE_ENDIAN);
 }
+
+static Property omap_uart_properties[] = {
+    DEFINE_PROP_CHR("chardev", struct omap_uart_s, chr),
+    DEFINE_PROP_END_OF_LIST(),
+};
 static void omap_uart_class_init(ObjectClass *oc, void *data)
 {
-    
+    DeviceClass *dc = DEVICE_CLASS(oc);
+    device_class_set_props(dc, omap_uart_properties);
 }
 static void omap_uart_inst_init(Object *obj)
 {
