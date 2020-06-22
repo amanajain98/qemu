@@ -223,14 +223,16 @@ static void omap_uart_inst_init(Object *obj)
 {
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
     struct omap_uart_s *s = OMAP_UART(obj);
-    memory_region_init_io(&s->iomem, OBJECT(s), &omap_uart_ops, s, "omap_uart", 0x1000);
+    omap_uart_reset(s);
+    memory_region_init_io(&s->iomem, OBJECT(s), &omap_uart_ops, s, "omap_uart", 0x100);
     sysbus_init_mmio(sbd, &s->iomem);
-    sysbus_init_irq(sbd, &s->irq);
+    sysbus_init_irq(sbd, &s->irq);    
 }
 static const TypeInfo omap_uart_info = {
     .name          = TYPE_OMAP_UART,
     .parent        = TYPE_SYS_BUS_DEVICE,
     .instance_init = omap_uart_inst_init,
+    .instance_size = sizeof(struct omap_uart_s),
     .class_init    = omap_uart_class_init,
 };
 

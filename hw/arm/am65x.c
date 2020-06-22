@@ -31,7 +31,7 @@
 struct AM65x  {
     MachineState parent;
     MemMapEntry *memmap;
-    struct omap_uart_s *uart;
+    ///struct omap_uart_s *uart;
     DeviceState *gic;
     int gic_version;
     bool secure;
@@ -48,8 +48,6 @@ struct AM65xClass {
 /* The Pre-Defined certain values */
 #define NUM_IRQS 960 ///It has 960 shared Peripheral Interrupts
 #define USART0_INT 224
-#define USART1_INT 225
-#define USART2_INT 226
 
 #define LEGACY_RAMLIMIT_GB 255
 #define LEGACY_RAMLIMIT_BYTES (LEGACY_RAMLIMIT_GB * GiB)
@@ -72,6 +70,7 @@ enum {
     SECURE_MEM,
     FLASH,
 };
+
 static MemMapEntry base_memmap[] = {
     /* Space up to 0x00020000 is reserved for a boot ROM */
     [MEM] =                { 0x00000000, 0x00020000 },  
@@ -79,7 +78,7 @@ static MemMapEntry base_memmap[] = {
     /* GIC distributor and CPU interfaces sit inside the CPU peripheral space */
     [GIC0_DISTRIBUTOR] =   { 0x01800000, 0x00200000 },
     [GIC0_ITS] =           { 0x01a00000, 0x00200000 },
-    [UART0] =              { 0x02800000, 0x000001000 },
+    [UART0] =              { 0x02800000, 0x00001000 },
     /* This redistributor space allows up to 2*64kB*123 CPUs */
     [FW_CFG] =             { 0x09020000, 0x00000018 },
     [SECURE_MEM] =         { 0x0e000000, 0x01000000 },
@@ -103,7 +102,9 @@ enum {
     FW_CFG,
 };
 */
+
 unsigned int smp_cpus;
+
 /*
 static MemMapEntry base_memmap[] = {
     
@@ -133,6 +134,7 @@ static struct clk dummy_fclk0 = {
     .name = "uart0_fclk",
     .rate = 48000000,
 };
+
 static struct clk dummy_fclk1 = {
     .name = "uart1_fclk",
     .rate = 192000000,
@@ -176,6 +178,7 @@ static void create_serial_uart()
     memory_region_add_subregion(sysmem, mach->memmap[UART0].base, mr);
 }
 */
+
 static bool am65x_firmware_init(MachineState *machine , struct AM65x *mach,MemoryRegion *sysmem)
 {
     pflash_cfi01_legacy_drive(mach->flash , drive_get(IF_PFLASH, 0, 0));
@@ -213,6 +216,7 @@ static bool am65x_firmware_init(MachineState *machine , struct AM65x *mach,Memor
     }
     return bios_name;
 }
+
 static void create_secure_ram(struct AM65x *mach,
                               MemoryRegion *secure_sysmem)
 {
@@ -228,6 +232,7 @@ static void create_secure_ram(struct AM65x *mach,
     nodename = g_strdup_printf("/secram@%" PRIx64, base);
     g_free(nodename);
 }
+
 static FWCfgState *create_fw_cfg(const struct AM65x *mach, AddressSpace *as)
 {
     hwaddr base = mach->memmap[FW_CFG].base;
@@ -243,6 +248,7 @@ static const char *valid_cpus[] = {
     ARM_CPU_TYPE_NAME("cortex-a72"),
     ARM_CPU_TYPE_NAME("max"),
 };
+
 static bool cpu_type_valid(const char *cpu)
 {
     for (int i = 0; i < ARRAY_SIZE(valid_cpus); i++) {
@@ -252,12 +258,12 @@ static bool cpu_type_valid(const char *cpu)
     }
     return false;
 }
+
 static bool am65x_get_secure(Object *obj, Error **errp)
 {
     struct AM65x *mach = AM65x_MACHINE(obj);
     return mach->secure;
 }
-
 static void am65x_set_secure(Object *obj, bool value, Error **errp)
 {
     struct AM65x *mach = AM65x_MACHINE(obj);
@@ -274,6 +280,7 @@ static void am65x_set_gic_version(Object *obj, const char *value, Error **errp)
     struct AM65x *mach = AM65x_MACHINE(obj);
     mach->gic_version = VIRT_GIC_VERSION_3;
 }
+
 static void flash_create(struct AM65x *mach)
 {
     DeviceState *dev = qdev_create(NULL, TYPE_PFLASH_CFI01);
@@ -297,6 +304,7 @@ static void create_omap_uart(struct AM65x *mach,MemoryRegion *mem, Chardev *chr)
     DeviceState *dev = qdev_create(NULL, TYPE_OMAP_UART);
     SysBusDevice *s = SYS_BUS_DEVICE(dev);
     qdev_prop_set_chr(dev, "chardev", chr);
+    
     qdev_init_nofail(dev);
     memory_region_add_subregion(mem, base,
                                 sysbus_mmio_get_region(s, 0));
@@ -310,6 +318,7 @@ static void am65x_reset(void *opaque)
     omap_uart_reset(mach->uart);
 }
 */
+
 static void AM65x_init(MachineState *machine)
 {
     MachineClass *mc = MACHINE_GET_CLASS(machine);
@@ -484,6 +493,7 @@ static const CPUArchIdList *am65x_possible_cpu_arch_ids(MachineState *ms)
     }
     return ms->possible_cpus;
 }
+
 static CpuInstanceProperties am65x_cpu_index_to_props(MachineState *ms, unsigned cpu_index)
 {
     MachineClass *mc = MACHINE_GET_CLASS(ms);
@@ -492,10 +502,12 @@ static CpuInstanceProperties am65x_cpu_index_to_props(MachineState *ms, unsigned
     assert(cpu_index < possible_cpus->len);
     return possible_cpus->cpus[cpu_index].props;
 }
+
 static int64_t am65x_get_default_cpu_node_id(const MachineState *ms, int idx)
 {
     return idx % ms->numa_state->num_nodes;
 }
+
 static void am65x_instance_init(Object *obj)
 {
     struct AM65x *mach = AM65x_MACHINE(obj);
@@ -517,6 +529,7 @@ static void am65x_instance_init(Object *obj)
                                     NULL);
     flash_create(mach);
 }
+
 static void am65x_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -533,6 +546,7 @@ static void am65x_class_init(ObjectClass *oc, void *data)
     mc->numa_mem_supported = true;
     mc->auto_enable_numa_with_memhp = true;
 }
+
 static const TypeInfo new_device_info = {
     .name = MACHINE_TYPE_NAME("AM65x"),
     .parent = TYPE_MACHINE,
