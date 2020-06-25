@@ -22,24 +22,11 @@
 #include "hw/arm/omap.h"
 #include "hw/char/serial.h"
 #include "exec/address-spaces.h"
-
-/* UARTs */
-struct omap_uart_s {
-    MemoryRegion iomem;
-    hwaddr base;
-    SerialMM *serial; /* TODO */
-    struct omap_target_agent_s *ta;
-    omap_clk fclk;
-    qemu_irq irq;
-
-    uint8_t eblr;
-    uint8_t syscontrol;
-    uint8_t wkup;
-    uint8_t cfps;
-    uint8_t mdr[2];
-    uint8_t scr;
-    uint8_t clksel;
-};
+#include "hw/sysbus.h"
+#include "chardev/char-fe.h"
+#include "hw/qdev-properties.h"
+#include "hw/char/pl011.h"
+#include "hw/char/omap_uart.h"
 
 void omap_uart_reset(struct omap_uart_s *s)
 {
@@ -62,7 +49,7 @@ struct omap_uart_s *omap_uart_init(hwaddr base,
     s->irq = irq;
     s->serial = serial_mm_init(get_system_memory(), base, 2, irq,
                                omap_clk_getrate(fclk)/16,
-                               chr ?: qemu_chr_new(label, "null", NULL),
+                               chr ? chr : qemu_chr_new(label, "null", NULL),
                                DEVICE_NATIVE_ENDIAN);
     return s;
 }
@@ -167,7 +154,8 @@ struct omap_uart_s *am65x_uart_init(MemoryRegion *sysmem,
     struct omap_uart_s *s = omap_uart_init(base, irq,
                                            fclk, iclk, txdma, rxdma, label, chr);
     memory_region_init_io(&s->iomem, NULL, &omap_uart_ops, s, "omap.uart", 0x100);
-    memory_region_add_subregion(sysmem, base + 0x20, &s->iomem);
+    memory_region_add_subregion(sysmem, base, &s->iomem);
+    (*(s->serial)).serial.io.size=0x1000;
     return s;
 }
 
@@ -198,3 +186,74 @@ void omap_uart_attach(struct omap_uart_s *s, Chardev *chr)
                                chr ?: qemu_chr_new("null", "null", NULL),
                                DEVICE_NATIVE_ENDIAN);
 }
+
+static Property omap_uart_properties[] = {
+    DEFINE_PROP_CHR("chardev", struct omap_uart_s, chr),
+    DEFINE_PROP_END_OF_LIST(),
+};
+static void omap_put_fifo(void *opaque, uint32_t value)
+{
+    struct omap_uart_s *s = (struct omap_uart_s *)opaque;
+    int slot;
+
+    slot = s->read_pos + s->read_count;
+    if (slot >= 16)
+        slot -= 16;
+    s->read_fifo[slot] = value;
+    s->read_count++;
+}
+static void omap_receive(void *opaque, const uint8_t *buf, int size)
+{
+    omap_put_fifo(opaque, *buf);
+}
+static int omap_can_receive(void *opaque)
+{
+    struct omap_uart_s *s = (struct omap_uart_s *)opaque;
+    int r;
+
+    if (s->lcr & 0x10) {
+        r = s->read_count < 16;
+    } else {
+        r = s->read_count < 1;
+    }
+    return r;
+}
+static void omap_event(void *opaque, QEMUChrEvent event)
+{
+    if (event == CHR_EVENT_BREAK)
+        omap_put_fifo(opaque, 0x400);
+}
+static void omap_uart_realize(DeviceState *dev, Error **errp)
+{
+    struct omap_uart_s *s = OMAP_UART(dev);
+    qemu_chr_fe_set_handlers(&s->chr, omap_can_receive, omap_receive,
+                             omap_event, NULL, s, NULL, true);
+}
+static void omap_uart_class_init(ObjectClass *oc, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(oc);
+    dc->realize=omap_uart_realize;
+    device_class_set_props(dc, omap_uart_properties);
+}
+static void omap_uart_inst_init(Object *obj)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    struct omap_uart_s *s = OMAP_UART(obj);
+    omap_uart_reset(s);
+    memory_region_init_io(&s->iomem, OBJECT(s), &omap_uart_ops, s, "omap_uart", 0x100);
+    sysbus_init_mmio(sbd, &s->iomem);
+    sysbus_init_irq(sbd, &s->irq);    
+}
+static const TypeInfo omap_uart_info = {
+    .name          = TYPE_OMAP_UART,
+    .parent        = TYPE_SYS_BUS_DEVICE,
+    .instance_init = omap_uart_inst_init,
+    .instance_size = sizeof(struct omap_uart_s),
+    .class_init    = omap_uart_class_init,
+};
+
+static void omap_register_types(void)
+{
+    type_register_static(&omap_uart_info);
+}
+type_init(omap_register_types)
